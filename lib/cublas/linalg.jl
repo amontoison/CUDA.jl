@@ -24,14 +24,18 @@ function LinearAlgebra.BLAS.dotc(DX::StridedCuArray{T}, DY::StridedCuArray{T}) w
     dotc(n, DX, DY)
 end
 
-function LinearAlgebra.BLAS.dot(DX::DenseCuArray{T}, DY::DenseCuArray{T}) where T<:Union{ComplexF32,ComplexF64}
-    BLAS.dotc(DX, DY)
-end
-
 function LinearAlgebra.BLAS.dotu(DX::StridedCuArray{T}, DY::StridedCuArray{T}) where T<:Union{ComplexF32,ComplexF64}
     n = length(DX)
     n==length(DY) || throw(DimensionMismatch("dot product arguments have lengths $(length(DX)) and $(length(DY))"))
     dotu(n, DX, DY)
+end
+
+function LinearAlgebra.dot(DX::StridedCuArray{T}, DY::StridedCuArray{T}) where T<:Union{Float32,Float64}
+    BLAS.dot(DX, DY)
+end
+
+function LinearAlgebra.dot(DX::StridedCuArray{T}, DY::StridedCuArray{T}) where T<:Union{ComplexF32,ComplexF64}
+    BLAS.dotc(DX, DY)
 end
 
 LinearAlgebra.norm(x::DenseCuArray{<:CublasFloat}) = nrm2(x)

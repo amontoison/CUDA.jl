@@ -137,8 +137,8 @@ for (jname, fname, elty) in ((:dot,:cublasDdot_v2,:Float64),
                              (:dotu,:cublasCdotu_v2,:ComplexF32))
     @eval begin
         function $jname(n::Integer,
-                        x::DenseCuArray{$elty},
-                        y::DenseCuArray{$elty})
+                        x::StridedCuArray{$elty},
+                        y::StridedCuArray{$elty})
             result = Ref{$elty}()
             $fname(handle(), n, x, stride(x, 1), y, stride(y, 1), result)
             return result[]
