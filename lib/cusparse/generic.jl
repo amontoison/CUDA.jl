@@ -99,24 +99,37 @@ function rot!(X::CuSparseVector{T}, Y::CuVector{T}, c::Number, s::Number, index:
     return X, Y
 end
 
-function vv!(transx::SparseChar, X::CuSparseVector{T}, Y::DenseCuVector{T}, index::SparseChar) where {T}
+function vv_buffersize(transx::SparseChar, descX::CuSparseVectorDescriptor, descY::CuDenseVectorDescriptor, T::DataType)
+    out = Ref{Csize_t}()
+    cusparseSpVV_bufferSize(handle(), transx, descX, descY, Ref{T}(), T, out)
+    return out[]
+end
+
+function vv!(transx::SparseChar, X::CuSparseVector{T}, Y::DenseCuVector{T}, index::SparseChar; buffer::Union{Nothing,CuVector{UInt8}}=nothing) where {T}
     descX = CuSparseVectorDescriptor(X, index)
     descY = CuDenseVectorDescriptor(Y)
     result = Ref{T}()
 
-    function bufferSize()
-        out = Ref{Csize_t}()
-        cusparseSpVV_bufferSize(handle(), transx, descX, descY, result, T, out)
-        return out[]
+    buffersize = vv_buffersize(transx, descX, descY, T)
+    new_buffer = isnothing(buffer)
+    if new_buffer
+        buffer = CuVector{UInt8}(undef, buffersize)
     end
-    with_workspace(bufferSize) do buffer
-        cusparseSpVV(handle(), transx, descX, descY, result, T, buffer)
-    end
+
+    cusparseSpVV(handle(), transx, descX, descY, result, T, buffer)
+    !new_buffer || CUDA.unsafe_free!(buffer)
     return result[]
 end
 
+function mv_buffersize(transa::SparseChar, alpha::Number, descA::CuSparseMatrixDescriptor, descX::CuDenseVectorDescriptor,
+                       beta::Number, descY::CuDenseVectorDescriptor, T::DataType, algo::cusparseSpMVAlg_t)
+    out = Ref{Csize_t}()
+    cusparseSpMV_bufferSize(handle(), transa, Ref{T}(alpha), descA, descX, Ref{T}(beta), descY, T, algo, out)
+    return out[]
+end
+
 function mv!(transa::SparseChar, alpha::Number, A::Union{CuSparseMatrixCSC{TA},CuSparseMatrixCSR{TA},CuSparseMatrixCOO{TA}}, X::DenseCuVector{T},
-             beta::Number, Y::DenseCuVector{T}, index::SparseChar, algo::cusparseSpMVAlg_t=CUSPARSE_MV_ALG_DEFAULT) where {TA, T}
+             beta::Number, Y::DenseCuVector{T}, index::SparseChar, algo::cusparseSpMVAlg_t=CUSPARSE_MV_ALG_DEFAULT; buffer::Union{Nothing,CuVector{UInt8}}=nothing) where {TA, T}
 
     # Support transa = 'C' for real matrices
     transa = T <: Real && transa == 'C' ? 'T' : transa
@@ -127,9 +140,7 @@ function mv!(transa::SparseChar, alpha::Number, A::Union{CuSparseMatrixCSC{TA},C
     end
 
     if isa(A, CuSparseMatrixCSC)
-        # cusparseSpMV doesn't support CSC format with CUSPARSE.version() < v"11.6.1"
-        # cusparseSpMV supports the CSC format with CUSPARSE.version() ≥ v"11.6.1"
-        # but it doesn't work for complex numbers when transa == 'C'
+        # cusparseSpMV doesn't fully support CSC format with CUSPARSE.version() < v"11.7.5"
         descA = CuSparseMatrixDescriptor(A, index, convert=true)
         n,m = size(A)
         transa = transa == 'N' ? 'T' : 'N'
@@ -158,21 +169,26 @@ function mv!(transa::SparseChar, alpha::Number, A::Union{CuSparseMatrixCSC{TA},C
         T
     end
 
-    function bufferSize()
-        out = Ref{Csize_t}()
-        cusparseSpMV_bufferSize(handle(), transa, Ref{compute_type}(alpha), descA, descX, Ref{compute_type}(beta),
-                                descY, compute_type, algo, out)
-        return out[]
+    buffersize = mv_buffersize(transa, alpha, descA, descX, beta, descY, compute_type, algo)
+    new_buffer = isnothing(buffer)
+    if new_buffer
+        buffer = CuVector{UInt8}(undef, buffersize)
     end
-    with_workspace(bufferSize) do buffer
-        cusparseSpMV(handle(), transa, Ref{compute_type}(alpha), descA, descX, Ref{compute_type}(beta),
-                     descY, compute_type, algo, buffer)
-    end
+
+    cusparseSpMV(handle(), transa, Ref{compute_type}(alpha), descA, descX, Ref{compute_type}(beta), descY, compute_type, algo, buffer)
+    !new_buffer || CUDA.unsafe_free!(buffer)
     return Y
 end
 
+function mm_buffersize(transa::SparseChar, transb::SparseChar, alpha::Number, descA::CuSparseMatrixDescriptor, descB::CuDenseMatrixDescriptor,
+                       beta::Number, descC::CuDenseMatrixDescriptor, T::DataType, algo::cusparseSpMMAlg_t)
+    out = Ref{Csize_t}()
+    cusparseSpMM_bufferSize(handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta), descC, T, algo, out)
+    return out[]
+end
+
 function mm!(transa::SparseChar, transb::SparseChar, alpha::Number, A::Union{CuSparseMatrixCSC{T},CuSparseMatrixCSR{T},CuSparseMatrixCOO{T}},
-             B::DenseCuMatrix{T}, beta::Number, C::DenseCuMatrix{T}, index::SparseChar, algo::cusparseSpMMAlg_t=CUSPARSE_MM_ALG_DEFAULT) where {T}
+             B::DenseCuMatrix{T}, beta::Number, C::DenseCuMatrix{T}, index::SparseChar, algo::cusparseSpMMAlg_t=CUSPARSE_MM_ALG_DEFAULT; buffer::Union{Nothing,CuVector{UInt8}}=nothing) where {T}
 
     # Support transa = 'C' and `transb = 'C' for real matrices
     transa = T <: Real && transa == 'C' ? 'T' : transa
@@ -184,9 +200,7 @@ function mm!(transa::SparseChar, transb::SparseChar, alpha::Number, A::Union{CuS
     end
 
     if isa(A, CuSparseMatrixCSC)
-        # cusparseSpMM doesn't support CSC format with CUSPARSE.version() < v"11.6.1"
-        # cusparseSpMM supports the CSC format with CUSPARSE.version() ≥ v"11.6.1"
-        # but it doesn't work for complex numbers when transa == 'C'
+        # cusparseSpMM doesn't fully support CSC format with CUSPARSE.version() < v"11.7.5"
         descA = CuSparseMatrixDescriptor(A, index, convert=true)
         k,m = size(A)
         transa = transa == 'N' ? 'T' : 'N'
@@ -209,24 +223,19 @@ function mm!(transa::SparseChar, transb::SparseChar, alpha::Number, A::Union{CuS
     descB = CuDenseMatrixDescriptor(B)
     descC = CuDenseMatrixDescriptor(C)
 
-    function bufferSize()
-        out = Ref{Csize_t}()
-        cusparseSpMM_bufferSize(
-            handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta),
-            descC, T, algo, out)
-        return out[]
-    end
-    with_workspace(bufferSize) do buffer
-        # Uncomment if we find a way to reuse the buffer (issue #1362)
-        # cusparseSpMM_preprocess(
-        #     handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta),
-        #     descC, T, algo, buffer)
-        # end
-        cusparseSpMM(
-            handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta),
-            descC, T, algo, buffer)
+    buffersize = mm_buffersize(transa, transb, alpha, descA, descB, beta, descC, T, algo)
+    new_buffer = isnothing(buffer)
+    if new_buffer
+        buffer = CuVector{UInt8}(undef, buffersize)
     end
 
+    # Uncomment if we find a way to reuse the buffer (issue #1362)
+    # cusparseSpMM_preprocess(
+    #     handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta),
+    #     descC, T, algo, buffer)
+    # end
+    cusparseSpMM(handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta), descC, T, algo, buffer)
+    !new_buffer || CUDA.unsafe_free!(buffer)
     return C
 end
 
@@ -354,9 +363,16 @@ function gemm(transa::SparseChar, transb::SparseChar, alpha::Number, A::CuSparse
     return D
 end
 
+function sv_buffersize(transa::SparseChar, alpha::Number, descA::CuSparseMatrixDescriptor, descX::CuDenseVectorDescriptor,
+                       descY::CuDenseVectorDescriptor, T::DataType, algo::cusparseSpSVAlg_t, spsv_desc::CuSparseSpSVDescriptor)
+    out = Ref{Csize_t}()
+    cusparseSpSV_bufferSize(handle(), transa, Ref{T}(alpha), descA, descX, descY, T, algo, spsv_desc, out)
+    return out[]
+end
+
 function sv!(transa::SparseChar, uplo::SparseChar, diag::SparseChar,
              alpha::Number, A::Union{CuSparseMatrixCSC{T},CuSparseMatrixCSR{T},CuSparseMatrixCOO{T}}, X::DenseCuVector{T},
-             Y::DenseCuVector{T}, index::SparseChar, algo::cusparseSpSVAlg_t=CUSPARSE_SPSV_ALG_DEFAULT) where {T}
+             Y::DenseCuVector{T}, index::SparseChar, algo::cusparseSpSVAlg_t=CUSPARSE_SPSV_ALG_DEFAULT; buffer::Union{Nothing,CuVector{UInt8}}=nothing) where {T}
 
     # Support transa = 'C' for real matrices
     transa = T <: Real && transa == 'C' ? 'T' : transa
@@ -392,21 +408,29 @@ function sv!(transa::SparseChar, uplo::SparseChar, diag::SparseChar,
     descY = CuDenseVectorDescriptor(Y)
 
     spsv_desc = CuSparseSpSVDescriptor()
-    function bufferSize()
-        out = Ref{Csize_t}()
-        cusparseSpSV_bufferSize(handle(), transa, Ref{T}(alpha), descA, descX, descY, T, algo, spsv_desc, out)
-        return out[]
+
+    buffersize = sv_buffersize(transa, alpha, descA, descX, descY, T, algo, spsv_desc)
+    new_buffer = isnothing(buffer)
+    if new_buffer
+        buffer = CuVector{UInt8}(undef, buffersize)
     end
-    with_workspace(bufferSize) do buffer
-        cusparseSpSV_analysis(handle(), transa, Ref{T}(alpha), descA, descX, descY, T, algo, spsv_desc, buffer)
-        cusparseSpSV_solve(handle(), transa, Ref{T}(alpha), descA, descX, descY, T, algo, spsv_desc)
-    end
+
+    cusparseSpSV_analysis(handle(), transa, Ref{T}(alpha), descA, descX, descY, T, algo, spsv_desc, buffer)
+    cusparseSpSV_solve(handle(), transa, Ref{T}(alpha), descA, descX, descY, T, algo, spsv_desc)
+    !new_buffer || CUDA.unsafe_free!(buffer)
     return Y
+end
+
+function sm_buffersize(transa::SparseChar, transb::SparseChar, alpha::Number, descA::CuSparseMatrixDescriptor, descB::CuDenseMatrixDescriptor,
+                       descC::CuDenseMatrixDescriptor, T::DataType, algo::cusparseSpSMAlg_t, spsm_desc::CuSparseSpSMDescriptor)
+    out = Ref{Csize_t}()
+    cusparseSpSM_bufferSize(handle(), transa, transb, Ref{T}(alpha), descA, descB, descC, T, algo, spsm_desc, out)
+    return out[]
 end
 
 function sm!(transa::SparseChar, transb::SparseChar, uplo::SparseChar, diag::SparseChar,
              alpha::Number, A::Union{CuSparseMatrixCSC{T},CuSparseMatrixCSR{T},CuSparseMatrixCOO{T}}, B::DenseCuMatrix{T},
-             C::DenseCuMatrix{T}, index::SparseChar, algo::cusparseSpSMAlg_t=CUSPARSE_SPSM_ALG_DEFAULT) where {T}
+             C::DenseCuMatrix{T}, index::SparseChar, algo::cusparseSpSMAlg_t=CUSPARSE_SPSM_ALG_DEFAULT; buffer::Union{Nothing,CuVector{UInt8}}=nothing) where {T}
 
     # Support transa = 'C' and `transb = 'C' for real matrices
     transa = T <: Real && transa == 'C' ? 'T' : transa
@@ -446,20 +470,29 @@ function sm!(transa::SparseChar, transb::SparseChar, uplo::SparseChar, diag::Spa
     descC = CuDenseMatrixDescriptor(C)
 
     spsm_desc = CuSparseSpSMDescriptor()
-    function bufferSize()
-        out = Ref{Csize_t}()
-        cusparseSpSM_bufferSize(handle(), transa, transb, Ref{T}(alpha), descA, descB, descC, T, algo, spsm_desc, out)
-        return out[]
+
+    buffersize = sm_buffersize(transa, transb, alpha, descA, descB, descC, T, algo, spsm_desc)
+    new_buffer = isnothing(buffer)
+    if new_buffer
+        buffer = CuVector{UInt8}(undef, buffersize)
     end
-    with_workspace(bufferSize) do buffer
-        cusparseSpSM_analysis(handle(), transa, transb, Ref{T}(alpha), descA, descB, descC, T, algo, spsm_desc, buffer)
-        cusparseSpSM_solve(handle(), transa, transb, Ref{T}(alpha), descA, descB, descC, T, algo, spsm_desc)
-    end
+
+    cusparseSpSM_analysis(handle(), transa, transb, Ref{T}(alpha), descA, descB, descC, T, algo, spsm_desc, buffer)
+    cusparseSpSM_solve(handle(), transa, transb, Ref{T}(alpha), descA, descB, descC, T, algo, spsm_desc)
+    !new_buffer || CUDA.unsafe_free!(buffer)
     return C
 end
 
+function sddmm_buffersize(transa::SparseChar, transb::SparseChar, alpha::Number, descA::CuDenseMatrixDescriptor,
+                          descB::CuDenseMatrixDescriptor, beta::Number, descC::CuSparseMatrixDescriptor,
+                          T::DataType, algo::cusparseSDDMMAlg_t)
+    out = Ref{Csize_t}()
+    cusparseSDDMM_bufferSize(handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta), descC, T, algo, out)
+    return out[]
+end
+
 function sddmm!(transa::SparseChar, transb::SparseChar, alpha::Number, A::DenseCuMatrix{T}, B::DenseCuMatrix{T},
-                beta::Number, C::CuSparseMatrixCSR{T}, index::SparseChar, algo::cusparseSDDMMAlg_t=CUSPARSE_SDDMM_ALG_DEFAULT) where {T}
+                beta::Number, C::CuSparseMatrixCSR{T}, index::SparseChar, algo::cusparseSDDMMAlg_t=CUSPARSE_SDDMM_ALG_DEFAULT; buffer::Union{Nothing,CuVector{UInt8}}=nothing) where {T}
 
     # Support transa = 'C' and `transb = 'C' for real matrices
     transa = T <: Real && transa == 'C' ? 'T' : transa
@@ -482,15 +515,15 @@ function sddmm!(transa::SparseChar, transb::SparseChar, alpha::Number, A::DenseC
     descB = CuDenseMatrixDescriptor(B)
     descC = CuSparseMatrixDescriptor(C, index)
 
-    function bufferSize()
-        out = Ref{Csize_t}()
-        cusparseSDDMM_bufferSize(handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta), descC, T, algo, out)
-        return out[]
+    buffersize = sddmm_buffersize(transa, transb, alpha, descA, descB, beta, descC, T, algo)
+    new_buffer = isnothing(buffer)
+    if new_buffer
+        buffer = CuVector{UInt8}(undef, buffersize)
     end
-    with_workspace(bufferSize) do buffer
-        # Uncomment if we find a way to reuse the buffer (issue #1362)
-        # cusparseSDDMM_preprocess(handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta), descC, T, algo, buffer)
-        cusparseSDDMM(handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta), descC, T, algo, buffer)
-    end
+
+    # Uncomment if we find a way to reuse the buffer (issue #1362)
+    # cusparseSDDMM_preprocess(handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta), descC, T, algo, buffer)
+    cusparseSDDMM(handle(), transa, transb, Ref{T}(alpha), descA, descB, Ref{T}(beta), descC, T, algo, buffer)
+    !new_buffer || CUDA.unsafe_free!(buffer)
     return C
 end
