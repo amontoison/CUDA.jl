@@ -2,8 +2,8 @@
 
 const CUSPARSE_VER_MAJOR = 11
 const CUSPARSE_VER_MINOR = 7
-const CUSPARSE_VER_PATCH = 3
-const CUSPARSE_VER_BUILD = 50
+const CUSPARSE_VER_PATCH = 5
+const CUSPARSE_VER_BUILD = 86
 const CUSPARSE_VERSION = CUSPARSE_VER_MAJOR * 1000 + CUSPARSE_VER_MINOR * 100 + CUSPARSE_VER_PATCH
 
 # Skipping MacroDefinition: CUSPARSE_DEPRECATED ( new_func ) __attribute__ ( ( deprecated ( "please use " # new_func " instead" ) ) )

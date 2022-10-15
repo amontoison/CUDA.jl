@@ -121,15 +121,13 @@ function mv!(transa::SparseChar, alpha::Number, A::Union{CuSparseMatrixCSC{TA},C
     # Support transa = 'C' for real matrices
     transa = T <: Real && transa == 'C' ? 'T' : transa
 
-    if isa(A, CuSparseMatrixCSC) && transa == 'C' && TA <: Complex
+    if isa(A, CuSparseMatrixCSC) && CUSPARSE.version() < v"12.0" && transa == 'C' && TA <: Complex
         throw(ArgumentError("Matrix-vector multiplication with the adjoint of a complex CSC matrix" *
                             " is not supported. Use a CSR or COO matrix instead."))
     end
 
-    if isa(A, CuSparseMatrixCSC)
-        # cusparseSpMV doesn't support CSC format with CUSPARSE.version() < v"11.6.1"
-        # cusparseSpMV supports the CSC format with CUSPARSE.version() ≥ v"11.6.1"
-        # but it doesn't work for complex numbers when transa == 'C'
+    if isa(A, CuSparseMatrixCSC) && CUSPARSE.version() < v"12.0"
+        # cusparseSpMV doesn't fully support CSC format with CUSPARSE.version() < v"12.0"
         descA = CuSparseMatrixDescriptor(A, index, convert=true)
         n,m = size(A)
         transa = transa == 'N' ? 'T' : 'N'
@@ -178,15 +176,13 @@ function mm!(transa::SparseChar, transb::SparseChar, alpha::Number, A::Union{CuS
     transa = T <: Real && transa == 'C' ? 'T' : transa
     transb = T <: Real && transb == 'C' ? 'T' : transb
 
-    if isa(A, CuSparseMatrixCSC) && transa == 'C' && T <: Complex
+    if isa(A, CuSparseMatrixCSC) && CUSPARSE.version() < v"12.0" && transa == 'C' && T <: Complex
         throw(ArgumentError("Matrix-matrix multiplication with the adjoint of a complex CSC matrix" *
                             " is not supported. Use a CSR and COO matrix instead."))
     end
 
-    if isa(A, CuSparseMatrixCSC)
-        # cusparseSpMM doesn't support CSC format with CUSPARSE.version() < v"11.6.1"
-        # cusparseSpMM supports the CSC format with CUSPARSE.version() ≥ v"11.6.1"
-        # but it doesn't work for complex numbers when transa == 'C'
+    if isa(A, CuSparseMatrixCSC) && CUSPARSE.version() < v"12.0"
+        # cusparseSpMM doesn't fully support CSC format with CUSPARSE.version() < v"12.0"
         descA = CuSparseMatrixDescriptor(A, index, convert=true)
         k,m = size(A)
         transa = transa == 'N' ? 'T' : 'N'
