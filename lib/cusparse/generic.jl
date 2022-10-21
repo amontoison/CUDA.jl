@@ -165,7 +165,9 @@ function mv!(transa::SparseChar, alpha::Number, A::Union{CuSparseMatrixCSC{TA},C
         out = Ref{Csize_t}()
         cusparseSpMV_bufferSize(handle(), transa, Ref{compute_type}(alpha), descA, descX, Ref{compute_type}(beta),
                                 descY, compute_type, algo, out)
-        println(out[])
+        if out[] == 0
+            out[] += 1
+        end
         return out[]
     end
     with_workspace(bufferSize) do buffer
