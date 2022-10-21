@@ -37,7 +37,7 @@ if CUSPARSE.version() >= v"11.4.1" # lower CUDA version doesn't support these al
 
     if CUSPARSE.version() >= v"11.7.2"
         SPMV_ALGOS[CuSparseMatrixCOO] = [CUSPARSE.CUSPARSE_SPMV_ALG_DEFAULT,
-                                         # CUSPARSE.CUSPARSE_SPMV_COO_ALG2,
+                                         CUSPARSE.CUSPARSE_SPMV_COO_ALG2,
                                          CUSPARSE.CUSPARSE_SPMV_COO_ALG1]
 
         SPMM_ALGOS[CuSparseMatrixCOO] = [CUSPARSE.CUSPARSE_SPMM_ALG_DEFAULT,
