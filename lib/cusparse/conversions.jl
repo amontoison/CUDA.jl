@@ -372,7 +372,9 @@ end
 
 ## CuSparseVector to CuVector
 
-function CuVector(sv::CuSparseVector{T}) where {T}
+CuVector(x::CuSparseVector{T}) where {T} = CuVector{T}(X)
+
+function CuVector{T}(sv::CuSparseVector{T}) where {T}
     n = length(sv)
     dv = CUDA.zeros(T, n)
     scatter!(dv, sv, 'O')
