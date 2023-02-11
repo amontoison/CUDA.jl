@@ -86,6 +86,9 @@ end
         @testset "conversion SparseMatrixCSC --> $CuSparseMatrixType1" begin
             @test collect(dA1) ≈ A
         end
+        @testset "conversion $CuSparseMatrixType1 --> SparseMatrixCSC" begin
+            @test SparseMatrixCSC(dA1) ≈ A
+        end
         for CuSparseMatrixType2 in (CuSparseMatrixCSC, CuSparseMatrixCSR, CuSparseMatrixCOO, CuSparseMatrixBSR)
             CuSparseMatrixType1 == CuSparseMatrixType2 && continue
             @testset "conversion $CuSparseMatrixType1 --> $CuSparseMatrixType2" begin
@@ -133,13 +136,13 @@ end
     end
     @testset "sort_csr" begin
         crows = [1, 3, 5, 7] |> cu
-        cols = [2, 1, 1, 2, 3, 2] |> cu
+        cols = [2, 1, 1, 3, 3, 2] |> cu
         vals = [7, 5, 8, 6, 9, 4] |> cu
         csr = CuSparseMatrixCSR(crows, cols, vals, (3,3))
 
         sorted_csr = sort_csr(csr)
         @test collect(sorted_csr.rowPtr) ≈ [1, 3, 5, 7]
-        @test collect(sorted_csr.colVal) ≈ [1, 2, 1, 2, 2, 3]
+        @test collect(sorted_csr.colVal) ≈ [1, 2, 1, 3, 2, 3]
         @test collect(sorted_csr.nzVal)  ≈ [5, 7, 8, 6, 4, 9]
     end
 end

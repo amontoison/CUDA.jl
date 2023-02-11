@@ -266,6 +266,9 @@ for elty in (Float32, Float64, ComplexF32, ComplexF64)
                     csc.colPtr, rowvals(csc), nzVal, rowPtr, colVal,
                     $elty, action, inda, algo, buffer)
             end
+            display(rowPtr)
+            display(colVal)
+            display(nzVal)
             CuSparseMatrixCSR(rowPtr,colVal,nzVal,size(csc))
         end
     end
