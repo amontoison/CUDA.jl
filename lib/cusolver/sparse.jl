@@ -133,6 +133,24 @@ for (fname, elty, relty) in ((:cusolverSpScsrlsvchol, :Float32, :Float32),
 
             x
         end
+
+        function csrlsvchol!(A::CuSparseMatrixCSR{$elty},
+                             b::CuMatrix{$elty},
+                             x::CuMatrix{$elty},
+                             tol::$relty,
+                             reorder::Cint,
+                             inda::Char)
+            n = size(A,1)
+            desca = CuMatrixDescriptor('G', 'L', 'N', inda)
+            singularity = zeros(Cint,1)
+            $fname(sparse_handle(), n, A.nnz, desca, A.nzVal, A.rowPtr, A.colVal, b, tol, reorder, x, singularity)
+
+            if singularity[1] != -1
+                throw(SingularException(singularity[1]))
+            end
+
+            x
+        end
     end
 end
 
