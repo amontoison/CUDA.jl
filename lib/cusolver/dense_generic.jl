@@ -310,7 +310,7 @@ function Xgesvdr!(jobu::Char, jobv::Char, A::StridedCuMatrix{T}, k::Integer;
     else
         throw(ArgumentError("jobu is incorrect. The values accepted are 'S' and 'N'."))
     end
-    Σ = CuVector{R}(undef, k)
+    Σ = CuVector{R}(undef, n)
     V = if jobv == 'S'
         CuMatrix{T}(undef, k, n)
     elseif jobv == 'N'
